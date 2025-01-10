@@ -37,7 +37,10 @@
 
 #include <cmath>
 #include <cstring>
-#include<omp.h>
+#include <omp.h>
+#include <iostream>
+#include <chrono>
+#include "arm_sve.h"
 
 using namespace LAMMPS_NS;
 using namespace MathSpecial;
@@ -412,143 +415,353 @@ void PairAIREBO::REBO_neigh()
    REBO forces and energy
 ------------------------------------------------------------------------- */
 
+// void PairAIREBO::FREBO(int eflag)
+// {
+//   // int i,j,k,m,ii,inum,itype,jtype;
+//   // int *ilist,*REBO_neighs;
+
+//   double ***f_thr;
+//   double *pvector_thr;
+//   double *eng_vdwl_thr;
+//   double *eng_coul_thr;
+//   double** virial_thr;
+//   int nthr = omp_get_max_threads();
+//   // std::cout << "nthr: " << nthr << std::endl;
+//   memory->create(f_thr, nthr, atom->nmax, 3, "f_thr: f_thr buffer");
+//   memory->create(pvector_thr, nthr, "pvector_thr: pvector_thr buffer");
+//   memory->create(eng_vdwl_thr, nthr, "eng_vdwl_thr:eng_vdwl buffer");
+//   memory->create(eng_coul_thr, nthr, "eng_coul_thr:eng_coul buffer");
+//   memory->create(virial_thr,  nthr, 6, "virial_thr:virial buffer");
+  
+//   double **x = atom->x;
+//   double **f = atom->f;
+//   int *type = atom->type;
+//   tagint *tag = atom->tag;
+//   int nlocal = atom->nlocal;
+//   int newton_pair = force->newton_pair;
+//   double** eatom_thr;
+//   double*** vatom_thr;
+//   memory->create(eatom_thr,   nthr,nlocal, "eatom_thr:eatom buffer");
+//   memory->create(vatom_thr,   nthr,nlocal, 6,"vatom_thr:vatom buffer");
+
+//   int inum = list->inum;
+//   int *ilist = list->ilist;
+
+//   // two-body interactions from REBO neighbor list, skip half of them
+//   //#pragma omp parallel for reduction(+:f[:n][0], f[:n][1], f[:n][2])
+
+//   #pragma omp parallel num_threads(nthr)
+//   {  
+//     int thread_id = omp_get_thread_num();
+//     eng_vdwl_thr[thread_id] = 0;
+//     eng_coul_thr[thread_id] = 0;
+//     for (int i = 0; i < atom->nmax; i++) {
+//       f_thr[thread_id][i][0] = 0.0;
+//       f_thr[thread_id][i][1] = 0.0;
+//       f_thr[thread_id][i][2] = 0.0;
+//     }
+//     for (int ii = 0; ii < inum; ii++) {
+//       tagint itag,jtag;
+//       double delx,dely,delz,evdwl,fpair,xtmp,ytmp,ztmp;
+//       double rsq,rij,wij;
+//       double Qij,Aij,alphaij,VR,pre,dVRdi,VA,term,bij,dVAdi,dVA;
+//       double dwij,del[3];
+//       int i = ilist[ii];
+//       itag = tag[i];
+//       int itype = map[type[i]];
+//       xtmp = x[i][0];
+//       ytmp = x[i][1];
+//       ztmp = x[i][2];
+//       int *REBO_neighs = REBO_firstneigh[i];
+
+//       for (int k = 0; k < REBO_numneigh[i]; k++) {
+//         int j = REBO_neighs[k];
+//         jtag = tag[j];
+
+//         if (itag > jtag) {
+//           if ((itag+jtag) % 2 == 0) continue;
+//         } else if (itag < jtag) {
+//           if ((itag+jtag) % 2 == 1) continue;
+//         } else {
+//           if (x[j][2] < ztmp) continue;
+//           if (x[j][2] == ztmp && x[j][1] < ytmp) continue;
+//           if (x[j][2] == ztmp && x[j][1] == ytmp && x[j][0] < xtmp) continue;
+//         }
+
+//         int jtype = map[type[j]];
+
+//         delx = x[i][0] - x[j][0];
+//         dely = x[i][1] - x[j][1];
+//         delz = x[i][2] - x[j][2];
+//         rsq = delx*delx + dely*dely + delz*delz;
+//         rij = sqrt(rsq);
+//         wij = Sp(rij,rcmin[itype][jtype],rcmax[itype][jtype],dwij);
+//         if (wij <= TOL) continue;
+
+//         Qij = Q[itype][jtype];
+//         Aij = A[itype][jtype];
+//         alphaij = alpha[itype][jtype];
+
+//         VR = wij*(1.0+(Qij/rij)) * Aij*exp(-alphaij*rij);
+//         pre = wij*Aij * exp(-alphaij*rij);
+//         dVRdi = pre * ((-alphaij)-(Qij/rsq)-(Qij*alphaij/rij));
+//         dVRdi += VR/wij * dwij;
+
+//         VA = dVA = 0.0;
+//         for (int m = 0; m < 3; m++) {
+//           term = -wij * BIJc[itype][jtype][m] * exp(-Beta[itype][jtype][m]*rij);
+//           VA += term;
+//           dVA += -Beta[itype][jtype][m] * term;
+//         }
+//         dVA += VA/wij * dwij;
+//         del[0] = delx;
+//         del[1] = dely;
+//         del[2] = delz;
+//         bij = bondorder(i,j,del,rij,VA,f);
+//         dVAdi = bij*dVA;
+
+//         fpair = -(dVRdi+dVAdi) / rij;
+//         // f[i][0] += delx*fpair;
+//         // f[i][1] += dely*fpair;
+//         // f[i][2] += delz*fpair;
+//         // f[j][0] -= delx*fpair;
+//         // f[j][1] -= dely*fpair;
+//         // f[j][2] -= delz*fpair;
+//         f_thr[thread_id][i][0] += delx*fpair;
+//         f_thr[thread_id][i][1] += dely*fpair;
+//         f_thr[thread_id][i][2] += delz*fpair;
+//         f_thr[thread_id][j][0] -= delx*fpair;
+//         f_thr[thread_id][j][1] -= dely*fpair;
+//         f_thr[thread_id][j][2] -= delz*fpair;
+
+//         if (eflag)  pvector_thr[thread_id] += evdwl = VR + bij*VA;
+//         if (evflag) ev_tally_omp(i, j, nlocal, newton_pair,evdwl, 0.0, fpair, delx, dely, delz, eng_vdwl_thr, eng_coul_thr, virial_thr, eatom_thr, vatom_thr, thread_id);
+//       }
+//     }   
+//   }
+
+//   // 归并线程局部结果到全局变量
+//   #pragma omp parallel for
+//   for (int i = 0; i < atom->nmax; ++i){
+//     for (int ithr = 0; ithr < nthr; ++ithr) {
+//         f[i][0] += f_thr[ithr][i][0];
+//         f[i][1] += f_thr[ithr][i][1];
+//         f[i][2] += f_thr[ithr][i][2];
+//     }
+//   }
+
+//   #pragma omp parallel for reduction(+:pvector[:nthr])
+//   for(int ithr = 0; ithr < nthr; ++ithr){
+//     pvector[0] += pvector_thr[ithr];
+//   }
+
+//   if (eflag_global) {
+//     for (int ithr = 0; ithr < nthr; ++ithr) {
+//       eng_vdwl += eng_vdwl_thr[ithr];
+//       eng_coul += eng_coul_thr[ithr];
+//     }
+//   }
+
+//   if (vflag_global){
+//     #pragma omp for reduction(+:virial[:6])
+//     for (int ithr = 0; ithr < nthr; ++ithr) {
+//       virial[0] += virial_thr[ithr][0];
+//       virial[1] += virial_thr[ithr][1];
+//       virial[2] += virial_thr[ithr][2];
+//       virial[3] += virial_thr[ithr][3];
+//       virial[4] += virial_thr[ithr][4];
+//       virial[5] += virial_thr[ithr][5];
+//     }
+//   }
+
+//   if (eflag_atom){
+//     #pragma omp parallel for
+//     for (int i = 0; i < nlocal; ++i) {
+//       for (int ithr = 0; ithr < nthr; ++ithr) {
+//         eatom[i] += eatom_thr[ithr][i];
+//       }
+//     }
+//   }
+
+//   if (vflag_atom) {
+//     #pragma omp parallel for
+//     for (int i = 0; i < nlocal; ++i) {
+//       for (int ithr = 0; ithr < nthr; ++ithr) {
+//         vatom[i][0] += vatom_thr[ithr][i][0]; 
+//         vatom[i][1] += vatom_thr[ithr][i][1];    
+//         vatom[i][2] += vatom_thr[ithr][i][2]; 
+//         vatom[i][3] += vatom_thr[ithr][i][3]; 
+//         vatom[i][4] += vatom_thr[ithr][i][4]; 
+//         vatom[i][5] += vatom_thr[ithr][i][5];       
+//       }
+//     }
+//   }
+
+//   // std::cout << pvector[0] << std::endl;
+
+//   memory->destroy(eng_vdwl_thr);
+//   memory->destroy(eng_coul_thr);
+//   memory->destroy(virial_thr);
+//   memory->destroy(eatom_thr);
+//   memory->destroy(vatom_thr);
+//   memory->destroy(f_thr);
+//   memory->destroy(pvector_thr);
+  
+// }
+
 void PairAIREBO::FREBO(int eflag)
 {
+  using namespace std::chrono;
+  auto start_time = high_resolution_clock::now();
+  int nthr = omp_get_max_threads();
   // int i,j,k,m,ii,inum,itype,jtype;
+  // tagint itag,jtag;
+  // double delx,dely,delz,evdwl,fpair,xtmp,ytmp,ztmp;
+  // double rsq,rij,wij;
+  // double Qij,Aij,alphaij,VR,pre,dVRdi,VA,term,bij,dVAdi,dVA;
+  // double dwij,del[3];
   // int *ilist,*REBO_neighs;
 
-  double ***f_thr;
-  double *pvector_thr;
-  double *eng_vdwl_thr;
-  double *eng_coul_thr;
-  double** virial_thr;
-  int nthr = omp_get_max_threads();
-  memory->create(f_thr, nthr, atom->nmax, 3, "PairAIREBO: f_thr memory allocation error");
-  memory->create(pvector_thr, nthr, "PairAIREBO: pvector_thr memory allocation error");
-  memory->create(eng_vdwl_thr, nthr, "eng_vdwl_thr:eng_vdwl buffer");
-  memory->create(eng_coul_thr, nthr, "eng_coul_thr:eng_coul buffer");
-  memory->create(virial_thr,  nthr, 6, "virial_thr:virial buffer");
-  
   double **x = atom->x;
   double **f = atom->f;
   int *type = atom->type;
   tagint *tag = atom->tag;
   int nlocal = atom->nlocal;
   int newton_pair = force->newton_pair;
-  double** eatom_thr;
-  double*** vatom_thr;
-  memory->create(eatom_thr,   nthr,nlocal, "eatom_thr:eatom buffer");
-  memory->create(vatom_thr,   nthr,nlocal, 6,"vatom_thr:vatom buffer");
 
   int inum = list->inum;
-  int *ilist = list->ilist;
+  int* ilist = list->ilist;
+
+  double* eng_vdwl_thr;
+  double* eng_coul_thr;
+  double** virial_thr;
+  double** eatom_thr;
+  double*** vatom_thr;
+  double*** f_thr;
+  double *pvector_thr;
+  memory->create(eng_vdwl_thr, nthr, "eng_vdwl_thr:eng_vdwl buffer");
+  memory->create(eng_coul_thr, nthr, "eng_coul_thr:eng_coul buffer");
+  memory->create(virial_thr,  nthr, 6, "virial_thr:virial buffer");
+  memory->create(eatom_thr,   nthr,nlocal, "eatom_thr:eatom buffer");
+  memory->create(vatom_thr,   nthr,nlocal, 6,"vatom_thr:vatom buffer");
+  memory->create(f_thr, nthr, atom->nmax, 3, "f_thr: f_thr buffer");
+  memory->create(pvector_thr, nthr, "pvector_thr: pvector_thr buffer");
 
   // two-body interactions from REBO neighbor list, skip half of them
-  //#pragma omp parallel for reduction(+:f[:n][0], f[:n][1], f[:n][2])
 
+// #pragma omp parallel for private(ii, i, itag, itype, xtmp, ytmp, ztmp, REBO_neighs, k, j, jtag, jtype, delx, dely, delz, rsq, rij, wij, Qij, Aij, alphaij, VR, pre, dVRdi, VA, dVA, m, term, del, bij, dVAdi, fpair, evdwl) reduction(+:pvector[0])   
 #pragma omp parallel num_threads(nthr)
-  {  
-    int thread_id = omp_get_thread_num();
-    eng_vdwl_thr[thread_id] = 0;
-    eng_coul_thr[thread_id] = 0;
-    for (int i = 0; i < atom->nmax; i++) {
-      f_thr[thread_id][i][0] = 0.0;
-      f_thr[thread_id][i][1] = 0.0;
-      f_thr[thread_id][i][2] = 0.0;
-    }
-    for (int ii = 0; ii < inum; ii++) {
-      tagint itag,jtag;
-      double delx,dely,delz,evdwl,fpair,xtmp,ytmp,ztmp;
-      double rsq,rij,wij;
-      double Qij,Aij,alphaij,VR,pre,dVRdi,VA,term,bij,dVAdi,dVA;
-      double dwij,del[3];
-      int i = ilist[ii];
-      itag = tag[i];
-      int itype = map[type[i]];
-      xtmp = x[i][0];
-      ytmp = x[i][1];
-      ztmp = x[i][2];
-      int *REBO_neighs = REBO_firstneigh[i];
-
-      for (int k = 0; k < REBO_numneigh[i]; k++) {
-        int j = REBO_neighs[k];
-        jtag = tag[j];
-
-        if (itag > jtag) {
-          if ((itag+jtag) % 2 == 0) continue;
-        } else if (itag < jtag) {
-          if ((itag+jtag) % 2 == 1) continue;
-        } else {
-          if (x[j][2] < ztmp) continue;
-          if (x[j][2] == ztmp && x[j][1] < ytmp) continue;
-          if (x[j][2] == ztmp && x[j][1] == ytmp && x[j][0] < xtmp) continue;
-        }
-
-        int jtype = map[type[j]];
-
-        delx = x[i][0] - x[j][0];
-        dely = x[i][1] - x[j][1];
-        delz = x[i][2] - x[j][2];
-        rsq = delx*delx + dely*dely + delz*delz;
-        rij = sqrt(rsq);
-        wij = Sp(rij,rcmin[itype][jtype],rcmax[itype][jtype],dwij);
-        if (wij <= TOL) continue;
-
-        Qij = Q[itype][jtype];
-        Aij = A[itype][jtype];
-        alphaij = alpha[itype][jtype];
-
-        VR = wij*(1.0+(Qij/rij)) * Aij*exp(-alphaij*rij);
-        pre = wij*Aij * exp(-alphaij*rij);
-        dVRdi = pre * ((-alphaij)-(Qij/rsq)-(Qij*alphaij/rij));
-        dVRdi += VR/wij * dwij;
-
-        VA = dVA = 0.0;
-        for (int m = 0; m < 3; m++) {
-          term = -wij * BIJc[itype][jtype][m] * exp(-Beta[itype][jtype][m]*rij);
-          VA += term;
-          dVA += -Beta[itype][jtype][m] * term;
-        }
-        dVA += VA/wij * dwij;
-        del[0] = delx;
-        del[1] = dely;
-        del[2] = delz;
-        bij = bondorder(i,j,del,rij,VA,f);
-        dVAdi = bij*dVA;
-
-        fpair = -(dVRdi+dVAdi) / rij;
-        // f[i][0] += delx*fpair;
-        // f[i][1] += dely*fpair;
-        // f[i][2] += delz*fpair;
-        // f[j][0] -= delx*fpair;
-        // f[j][1] -= dely*fpair;
-        // f[j][2] -= delz*fpair;
-        f_thr[thread_id][i][0] += delx*fpair;
-        f_thr[thread_id][i][1] += dely*fpair;
-        f_thr[thread_id][i][2] += delz*fpair;
-        f_thr[thread_id][j][0] -= delx*fpair;
-        f_thr[thread_id][j][1] -= dely*fpair;
-        f_thr[thread_id][j][2] -= delz*fpair;
-
-        if (eflag)  pvector_thr[thread_id] += evdwl = VR + bij*VA;
-        if (evflag) ev_tally_omp(i, j, nlocal, newton_pair,evdwl, 0.0, fpair, delx, dely, delz, eng_vdwl_thr, eng_coul_thr, virial_thr, eatom_thr, vatom_thr, thread_id);
-      }
-    }   
+{
+  int thread_id = omp_get_thread_num();
+  eng_vdwl_thr[thread_id] = 0.0;
+  eng_coul_thr[thread_id] = 0.0;
+  pvector_thr[thread_id] = 0.0;
+  for (int i = 0; i < atom->nmax; i++) {
+    f_thr[thread_id][i][0] = 0.0;
+    f_thr[thread_id][i][1] = 0.0;
+    f_thr[thread_id][i][2] = 0.0;
   }
+   double evdwl = 0.0;
+
+  #pragma omp for
+  for (int ii = 0; ii < inum; ii++) {
+    int i = ilist[ii];
+    tagint itag = tag[i];
+    int itype = map[type[i]];
+    double xtmp = x[i][0];
+    double ytmp = x[i][1];
+    double ztmp = x[i][2];
+    int* REBO_neighs = REBO_firstneigh[i];
+
+    for (int k = 0; k < REBO_numneigh[i]; k++) {
+      int j = REBO_neighs[k];
+      tagint jtag = tag[j];
+
+      if (itag > jtag) {
+        if ((itag+jtag) % 2 == 0) continue;
+      } else if (itag < jtag) {
+        if ((itag+jtag) % 2 == 1) continue;
+      } else {
+        if (x[j][2] < ztmp) continue;
+        if (x[j][2] == ztmp && x[j][1] < ytmp) continue;
+        if (x[j][2] == ztmp && x[j][1] == ytmp && x[j][0] < xtmp) continue;
+      }
+
+      int jtype = map[type[j]];
+
+      double delx = x[i][0] - x[j][0];
+      double dely = x[i][1] - x[j][1];
+      double delz = x[i][2] - x[j][2];
+      double rsq = delx*delx + dely*dely + delz*delz;
+      double rij = sqrt(rsq);
+      double dwij;
+      double wij = Sp(rij,rcmin[itype][jtype],rcmax[itype][jtype],dwij);
+      if (wij <= TOL) continue;
+
+      double Qij = Q[itype][jtype];
+      double Aij = A[itype][jtype];
+      double alphaij = alpha[itype][jtype];
+
+      double VR = wij*(1.0+(Qij/rij)) * Aij*exp(-alphaij*rij);
+      double pre = wij*Aij * exp(-alphaij*rij);
+      double dVRdi = pre * ((-alphaij)-(Qij/rsq)-(Qij*alphaij/rij));
+      dVRdi += VR/wij * dwij;
+
+      double VA = 0.0;
+      double dVA = 0.0;
+      double term = 0.0;
+      for (int m = 0; m < 3; m++) {
+        term = -wij * BIJc[itype][jtype][m] * exp(-Beta[itype][jtype][m]*rij);
+        VA += term;
+        dVA += -Beta[itype][jtype][m] * term;
+      }
+      dVA += VA/wij * dwij;
+      double del[3];
+      del[0] = delx;
+      del[1] = dely;
+      del[2] = delz;
+      double bij = bondorder(i,j,del,rij,VA,f);
+      double dVAdi = bij*dVA;
+
+      double fpair = -(dVRdi+dVAdi) / rij;
+      f_thr[thread_id][i][0] += delx*fpair;
+      f_thr[thread_id][i][1] += dely*fpair;
+      f_thr[thread_id][i][2] += delz*fpair;
+      f_thr[thread_id][j][0] -= delx*fpair;
+      f_thr[thread_id][j][1] -= dely*fpair;
+      f_thr[thread_id][j][2] -= delz*fpair;
+
+      // if (eflag) pvector[0] += evdwl = VR + bij*VA;
+      // #pragma omp critical
+      if (eflag) pvector_thr[thread_id] += evdwl = VR + bij*VA;
+      // #pragma omp critical
+      if (evflag) ev_tally_omp(i, j, nlocal, newton_pair,evdwl, 0.0, fpair, delx, dely, delz, eng_vdwl_thr, eng_coul_thr, virial_thr, eatom_thr, vatom_thr, thread_id);
+    }
+
+    // std::cout<<"the value of eng_vdwl_thr"<<thread_id<<"is:"<<eng_vdwl_thr[thread_id]<<std::endl;
+  }
+}
 
   // 归并线程局部结果到全局变量
-  #pragma omp parallel for
-  for (int i = 0; i < atom->nmax; ++i){
+
+  // #pragma omp parallel for
+  for (int i = 0; i < atom->nmax; ++i) {
     for (int ithr = 0; ithr < nthr; ++ithr) {
-        f[i][0] += f_thr[ithr][i][0];
-        f[i][1] += f_thr[ithr][i][1];
-        f[i][2] += f_thr[ithr][i][2];
+      f[i][0] += f_thr[ithr][i][0];
+      f[i][1] += f_thr[ithr][i][1];
+      f[i][2] += f_thr[ithr][i][2];
     }
   }
+  // std::cout<<"atom->nmax"<<atom->nmax<<std::endl;
+  // std::cout<<"f[0][0]: "<<f[0][0]<<std::endl;
+  // std::cout<<"f[0][1]: "<<f[0][1]<<std::endl;
+  // std::cout<<"f[0][2]: "<<f[0][2]<<std::endl;
 
-  for(int ithr = 0; ithr < nthr; ++ithr){
+  // #pragma omp parallel for reduction(+:pvector[:nthr])
+  for (int ithr = 0; ithr < nthr; ++ithr) {
     pvector[0] += pvector_thr[ithr];
   }
+  // std::cout<<"pvector[0]: "<<pvector[0]<<std::endl;
 
   if (eflag_global) {
     for (int ithr = 0; ithr < nthr; ++ithr) {
@@ -556,9 +769,14 @@ void PairAIREBO::FREBO(int eflag)
       eng_coul += eng_coul_thr[ithr];
     }
   }
+  // printf("Thread contributions to eng_vdwl:\n");
+  // for (int ithr = 0; ithr < nthr; ++ithr) {
+  //   printf("Thread %d: %g\n", ithr, eng_vdwl_thr[ithr]);
+  // }
+  // printf("Final eng_vdwl: %g\n", eng_vdwl);
 
-  if (vflag_global){
-    #pragma omp for reduction(+:virial[:6])
+  if (vflag_global) {
+    // #pragma omp for reduction(+:virial[:6])
     for (int ithr = 0; ithr < nthr; ++ithr) {
       virial[0] += virial_thr[ithr][0];
       virial[1] += virial_thr[ithr][1];
@@ -568,18 +786,21 @@ void PairAIREBO::FREBO(int eflag)
       virial[5] += virial_thr[ithr][5];
     }
   }
+  // std::cout<<"virial[0]: "<<virial[0]<<std::endl;
+  // std::cout<<"virial[1]: "<<virial[1]<<std::endl;
 
-  if (eflag_atom){
-    #pragma omp parallel for
+  if (eflag_atom) {
+    // #pragma omp parallel for 
     for (int i = 0; i < nlocal; ++i) {
       for (int ithr = 0; ithr < nthr; ++ithr) {
         eatom[i] += eatom_thr[ithr][i];
       }
     }
   }
+  // std::cout<<"eatom[0]: "<<eatom[0]<<std::endl;
 
   if (vflag_atom) {
-    #pragma omp parallel for
+    // #pragma omp parallel for
     for (int i = 0; i < nlocal; ++i) {
       for (int ithr = 0; ithr < nthr; ++ithr) {
         vatom[i][0] += vatom_thr[ithr][i][0]; 
@@ -592,6 +813,11 @@ void PairAIREBO::FREBO(int eflag)
     }
   }
 
+
+  auto end_time = high_resolution_clock::now();
+  auto reduction_duration = duration_cast<milliseconds>(end_time - start_time);
+  std::cout << "reduction_duration: " << reduction_duration.count() << "ms" << std::endl;
+
   memory->destroy(eng_vdwl_thr);
   memory->destroy(eng_coul_thr);
   memory->destroy(virial_thr);
@@ -599,8 +825,8 @@ void PairAIREBO::FREBO(int eflag)
   memory->destroy(vatom_thr);
   memory->destroy(f_thr);
   memory->destroy(pvector_thr);
-  
 }
+
 /* ----------------------------------------------------------------------
    compute LJ forces and energy
    find 3- and 4-step paths between atoms I,J via REBO neighbor lists
