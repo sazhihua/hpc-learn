@@ -661,7 +661,7 @@ void PairAIREBO::FREBO(int eflag)
     f_thr[thread_id][i][1] = 0.0;
     f_thr[thread_id][i][2] = 0.0;
   }
-   double evdwl = 0.0;
+  double evdwl = 0.0;
 
   #pragma omp for
   for (int ii = 0; ii < inum; ii++) {
